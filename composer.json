@@ -1,5 +1,5 @@
 {
-    "name": "cocur/background-process",
+    "name": "m1n05/background-process",
     "description": "Start processes in the background that continue running when the PHP process exists.",
     "type": "library",
     "keywords": ["process", "background", "unix"],
@@ -9,7 +9,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Cocur\\BackgroundProcess\\": "src/"
+            "M1n05\\BackgroundProcess\\": "src/"
         }
     }
 }
