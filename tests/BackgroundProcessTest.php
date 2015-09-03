@@ -5,7 +5,7 @@
  * (c) 2013-2014 Florian Eckerstorfer
  */
 
-namespace Cocur\BackgroundProcess;
+namespace M1n05\BackgroundProcess;
 
 /**
  * BackgroundProcessTest
@@ -21,22 +21,41 @@ class BackgroundProcessTest extends \PHPUnit_Framework_TestCase
 {
     /**
      * Tests running a background process.
-     *
-     * @covers Cocur\BackgroundProcess\BackgroundProcess::__construct()
-     * @covers Cocur\BackgroundProcess\BackgroundProcess::run()
-     * @covers Cocur\BackgroundProcess\BackgroundProcess::isRunning()
-     * @covers Cocur\BackgroundProcess\BackgroundProcess::getPid()
-     * @covers Cocur\BackgroundProcess\BackgroundProcess::stop()
+     * 
+     * @covers M1n05\BackgroundProcess\BackgroundProcess::run()
+     * @covers M1n05\BackgroundProcess\BackgroundProcess::isRunning()
+     * @covers M1n05\BackgroundProcess\BackgroundProcess::getPid()
+     * @covers M1n05\BackgroundProcess\BackgroundProcess::stop()
      */
     public function testRun()
     {
-        $process = new BackgroundProcess('sleep 5');
-        $this->assertFalse($process->isRunning(), 'process should not run');
-        $process->run();
-        $this->assertNotNull($process->getPid(), 'process should have a pid');
-        $this->assertTrue($process->isRunning(), 'process should run');
-        $this->assertTrue($process->stop(), 'stop process');
-        $this->assertFalse($process->isRunning(), 'processes should not run anymore');
-        $this->assertFalse($process->stop(), 'cannot stop process that is not running');
+		$pid = BackgroundProcess::run("php " . __DIR__ . DIRECTORY_SEPARATOR. "test2.php");
+		$this->assertInternalType('int', $pid, 'process should return pid');
+		$this->assertTrue(BackgroundProcess::isRunning($pid), 'process should run');
+        $this->assertTrue(BackgroundProcess::stop($pid), 'stop process');
+        $this->assertFalse(BackgroundProcess::isRunning($pid), 'processes should not run anymore');
+        $this->assertFalse(BackgroundProcess::stop($pid), 'cannot stop process that is not running');
     }
+	
+	public function testRunEmptyCommand()
+	{
+		$pid = BackgroundProcess::run("");
+		$this->assertNull($pid, 'process should not be started');
+	}
+	
+	public function testRunWithFile()
+	{
+		$outputfile = tempnam(__DIR__,'tst');
+				
+		$pid = BackgroundProcess::run("php " . __DIR__ . DIRECTORY_SEPARATOR. "test2.php", $outputfile);
+		echo $pid;
+		$this->assertFileExists($outputfile);
+		$this->assertTrue(BackgroundProcess::stop($pid), 'stop process');
+		sleep(5);
+		unlink($outputfile);
+		
+		
+		
+		 
+	}
 }

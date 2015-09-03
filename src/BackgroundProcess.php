@@ -6,7 +6,7 @@
  * (c) 2013-2015 Florian Eckerstorfer
  */
 
-namespace Cocur\BackgroundProcess;
+namespace M1n05\BackgroundProcess;
 
 /**
  * BackgroundProcess.
@@ -21,51 +21,56 @@ namespace Cocur\BackgroundProcess;
  */
 class BackgroundProcess
 {
-    /** @var string */
-    private $command;
+    const OS_WINDOWS = 1;
+    const OS_LINUX = 2;
+    const OS_MAC = 3;
+    const OS_OTHER = 4;
 
-    /** @var int */
-    private $pid;
-
-    /** @var $serverOS int */
-    protected $serverOS;
-
-    /**
-     * Constructor.
-     *
-     * @param string $command The command to execute
-     */
-    public function __construct($command)
-    {
-        $this->command = $command;
-        $this->serverOS = $this->serverOS();
-    }
-
+    /** @var $WshShell \Com **/
+    static protected $WshShell;
+    
     /**
      * Runs the command in a background process.
      *
+	 * @param string $command Command to execute
      * @param string $outputFile File to write the output of the process to; defaults to /dev/null
-     *                           currently $outputFile has no effect when used in conjunction with a Windows server
      */
-    public function run($outputFile = '/dev/null')
+    public static function run($command, $outputFile = null)
     {
-        switch ($this->serverOS) {
-            case 1:
-                $cmd = '%s &';
-                shell_exec(sprintf($cmd, $this->command, $outputFile));
-                break;
-            case 2:
-            case 3:
-                $cmd = '%s > %s 2>&1 & echo $!';
-                $this->pid = shell_exec(sprintf($cmd, $this->command, $outputFile));
-                break;
-            default:
-                throw new \RuntimeException(sprintf(
-                    'Could not execute command "%s" because operating system "%s" is not supported by Cocur\BackgroundProcess.',
-                    $this->command,
-                    PHP_OS
-                ));
-        }
+        	
+        $pid = null;
+		if(!empty($command)){
+			switch (BackgroundProcess::serverOS()) {
+	            case BackgroundProcess::OS_WINDOWS :
+	                if(is_null($outputFile)){
+						$cmd = 'cmd /C %s > NIL';
+					} else {
+						$cmd = 'cmd /C %s > %s';
+					}
+	                $WshShell = BackgroundProcess::getShell();
+					$oExec = $WshShell->exec(sprintf($cmd, $command, $outputFile));
+	                if($oExec){
+	                   $pid = $oExec->ProcessID;
+	                }
+	                break;
+	            case BackgroundProcess::OS_LINUX :
+	            case BackgroundProcess::OS_MAC :
+					if(is_null($outputFile)){
+						$outputFile = '/dev/null';
+					}
+	                $cmd = '%s > %s 2>&1 & echo $!';
+	                $pid = shell_exec(sprintf($cmd, $command, $outputFile));
+	                break;
+	            default:
+	                throw new \RuntimeException(sprintf(
+	                    'Could not execute command "%s" because operating system "%s" is not supported by Cocur\BackgroundProcess.',
+	                    $command,
+	                    PHP_OS
+	                ));
+	        }	
+		}
+        
+		return $pid;
     }
 
     /**
@@ -73,16 +78,33 @@ class BackgroundProcess
      *
      * @return bool TRUE if the process is running, FALSE if not.
      */
-    public function isRunning()
+    public static function isRunning($pid)
     {
-        try {
-            $result = shell_exec(sprintf('ps %d', $this->pid));
-            if (count(preg_split("/\n/", $result)) > 2) {
-                return true;
-            }
-        } catch (\Exception $e) {
-        }
+        
+        switch(self::serverOS()){
+            case BackgroundProcess::OS_WINDOWS :
+                $WshShell = self::getShell();
+                $cmd = "TASKLIST /FI \"PID eq %d\"";
+                $oExec = $WshShell->exec(sprintf($cmd, $pid));
+                $output = $oExec->StdOut->ReadAll();
+                if(strpos($output, sprintf("%d",$pid) ) !== false ) {
+                    return true;
+                }
+                break;
+            case BackgroundProcess::OS_LINUX :
 
+            case BackgroundProcess::OS_MAC :
+                try {
+                    $result = shell_exec(sprintf('ps %d', $pid));
+                    if (count(preg_split("/\n/", $result)) > 2) {
+                        return true;
+                    }        
+                } catch (\Exception $e) {}
+                break;
+            default:
+                return false;
+        }
+    
         return false;
     }
 
@@ -91,46 +113,56 @@ class BackgroundProcess
      *
      * @return bool `true` if the processes was stopped, `false` otherwise.
      */
-    public function stop()
+    public static function stop($pid)
     {
-        try {
-            $result = shell_exec(sprintf('kill %d 2>&1', $this->pid));
-            if (!preg_match('/No such process/', $result)) {
-                return true;
-            }
-        } catch (\Exception $e) {
+        switch(self::serverOS()){
+            case BackgroundProcess::OS_WINDOWS :
+                $WshShell = self::getShell();
+                $cmd = "TASKKILL /PID %d /F";
+                $oExec = $WshShell->exec(sprintf($cmd, $pid));
+                $output = $oExec->StdOut->readAll();
+                return strlen($output) > 0;
+                break;
+            case BackgroundProcess::OS_LINUX :
+            case BackgroundProcess::OS_MAC :
+                try {
+                    $result = shell_exec(sprintf('kill %d 2>&1', $pid));
+                    if (!preg_match('/No such process/', $result)) {
+                        return true;
+                    }      
+                } catch (\Exception $e) {}
+                break;
+            default:
+                return false;
         }
 
         return false;
     }
 
     /**
-     * Returns the ID of the process.
-     *
-     * @return int The ID of the process
-     */
-    public function getPid()
-    {
-        return $this->pid;
-    }
-
-    /**
      * @return int 1 Windows, 2 Linux, 3 Mac OS X, 4 unknown
      */
-    protected function serverOS()
+    protected static function serverOS()
     {
         $os = strtoupper(PHP_OS);
 
         if (substr($os, 0, 3) === 'WIN') {
-            $os = 1;
+            $os = BackgroundProcess::OS_WINDOWS;
         } else if ($os == 'LINUX') {
-            $os = 2;
+            $os = BackgroundProcess::OS_LINUX;
         } else if ($os == 'DARWIN') { // Mac OS X
-            $os = 3;
+            $os = BackgroundProcess::OS_MAC;
         } else {
-            $os = 4;
+            $os = BackgroundProcess::OS_OTHER;
         }
 
         return $os;
+    }
+
+    protected static function getShell(){
+        if(is_null(self::$WshShell)){
+            self::$WshShell = new \COM("WScript.Shell");
+        }
+        return self::$WshShell;
     }
 }
